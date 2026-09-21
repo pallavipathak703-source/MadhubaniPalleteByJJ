@@ -1,0 +1,142 @@
+.shop-page {
+  min-height: 100vh;
+  padding: 120px 7%;
+  background: #fdf8f3;
+}
+
+.shop-heading {
+  max-width: 700px;
+  margin-bottom: 70px;
+}
+
+.shop-small {
+  font-size: 12px;
+  letter-spacing: 4px;
+  color: #a45b58;
+  margin-bottom: 18px;
+}
+
+.shop-heading h1 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: clamp(45px, 6vw, 78px);
+  font-weight: 400;
+  line-height: 1;
+  color: #292323;
+}
+
+.shop-heading h1 span {
+  color: #a45b58;
+  font-style: italic;
+}
+
+.shop-description {
+  max-width: 560px;
+  margin-top: 25px;
+  color: #777;
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+.shop-loading,
+.shop-empty {
+  color: #777;
+  font-size: 16px;
+}
+
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 35px;
+}
+
+.product-card {
+  background: #fffdf9;
+  border: 1px solid rgba(130, 80, 65, 0.15);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.product-card:hover {
+  transform: translateY(-7px);
+  box-shadow: 0 18px 45px rgba(80, 50, 40, 0.12);
+}
+
+.product-image-box {
+  width: 100%;
+  aspect-ratio: 5 / 4;
+  overflow: hidden;
+  background: #f3e8dc;
+}
+
+.product-image-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.5s ease;
+}
+
+.product-card:hover .product-image-box img {
+  transform: scale(1.04);
+}
+
+.product-info {
+  padding: 25px;
+}
+
+.product-category {
+  margin: 0 0 8px;
+  color: #a45b58;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.product-info h2 {
+  margin: 0 0 12px;
+  font-family: Georgia, serif;
+  font-size: 25px;
+  font-weight: 400;
+  color: #292323;
+}
+
+.product-price {
+  margin: 0 0 20px;
+  font-size: 18px;
+  color: #555;
+}
+
+.view-product {
+  border: 1px solid #a45b58;
+  background: transparent;
+  color: #8d4d4a;
+  padding: 11px 22px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.3s ease;
+}
+
+.view-product:hover {
+  background: #a45b58;
+  color: white;
+}
+
+@media (max-width: 900px) {
+  .products-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .shop-page {
+    padding: 90px 5%;
+  }
+
+  .products-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shop-heading {
+    margin-bottom: 45px;
+  }
+}

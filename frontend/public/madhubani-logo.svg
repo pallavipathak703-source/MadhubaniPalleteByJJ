@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Madhubani Palette by Janvi Jha</title>
+  <desc id="desc">A circular Madhubani inspired logo with two fish and floral details.</desc>
+  <rect width="512" height="512" fill="#fffaf2"/>
+  <circle cx="256" cy="256" r="226" fill="#fffaf2" stroke="#914019" stroke-width="11"/>
+  <circle cx="256" cy="256" r="207" fill="none" stroke="#d68a16" stroke-width="4" stroke-dasharray="5 7"/>
+  <circle cx="256" cy="256" r="174" fill="none" stroke="#d68a16" stroke-width="3"/>
+  <g fill="none" stroke="#914019" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M254 206c-31-55-86-66-111-37-22 26-5 70 32 83 31 11 57-4 79-27z" fill="#e96636"/>
+    <path d="M258 206c31-55 86-66 111-37 22 26 5 70-32 83-31 11-57-4-79-27z" fill="#34736b"/>
+    <path d="M254 206c-18 41-29 64-63 83M258 206c18 41 29 64 63 83"/>
+    <path d="M164 177l-23-19M348 177l23-19M170 202l-27 2M342 202l27 2"/>
+    <circle cx="203" cy="181" r="7" fill="#fffaf2"/><circle cx="309" cy="181" r="7" fill="#fffaf2"/>
+    <path d="M188 208l11 15m-28-3l19 8m134-20l-11 15m28-3l-19 8"/>
+    <path d="M205 294c20 13 36 19 51 19s31-6 51-19"/>
+  </g>
+  <g fill="#df8314" stroke="#914019" stroke-width="3">
+    <path d="M256 265l9 20 22 2-17 14 5 22-19-11-19 11 5-22-17-14 22-2z"/>
+    <circle cx="76" cy="256" r="8"/><circle cx="436" cy="256" r="8"/>
+  </g>
+  <g fill="#34736b" stroke="#914019" stroke-width="3">
+    <path d="M104 125c20-20 36-23 49-20-7 18-20 30-43 34zM408 125c-20-20-36-23-49-20 7 18 20 30 43 34z"/>
+    <path d="M95 365c22 8 34 22 38 41-20-3-34-15-43-35zM417 365c-22 8-34 22-38 41 20-3 34-15 43-35z"/>
+  </g>
+  <text x="256" y="92" text-anchor="middle" fill="#914019" font-family="Georgia,serif" font-size="34" letter-spacing="3">MADHUBANI</text>
+  <text x="256" y="414" text-anchor="middle" fill="#914019" font-family="Georgia,serif" font-size="34" letter-spacing="4">PALETTE</text>
+  <text x="256" y="358" text-anchor="middle" fill="#914019" font-family="cursive" font-size="25" font-style="italic">By Janvi Jha</text>
+</svg>
