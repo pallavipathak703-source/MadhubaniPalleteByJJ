@@ -232,6 +232,132 @@ router.post("/create-order", async (req, res) => {
 });
 
 /**
+ * POST /api/payment/upi-order
+ * Direct UPI payment order creation (Google Pay / PhonePe / Paytm / QR).
+ * Securely calculates amounts from database, creates order with status 'Awaiting Verification',
+ * reserves stock, and returns order details for WhatsApp confirmation.
+ */
+router.post("/upi-order", async (req, res) => {
+  try {
+    const { customer, items, utr } = req.body;
+
+    if (!customer || !customer.name || !customer.phone || !customer.address) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer name, phone, and complete delivery address are required",
+      });
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Order items cannot be empty",
+      });
+    }
+
+    const productIds = items
+      .map((item) => item.product || item.productId || item._id)
+      .filter(Boolean);
+
+    if (productIds.length !== items.length) {
+      return res.status(400).json({
+        success: false,
+        message: "One or more order items contain invalid product IDs",
+      });
+    }
+
+    const dbProducts = await Product.find({ _id: { $in: productIds } });
+    const productMap = new Map(dbProducts.map((p) => [p._id.toString(), p]));
+
+    let calculatedSubtotal = 0;
+    const verifiedItems = [];
+
+    for (const item of items) {
+      const pId = String(item.product || item.productId || item._id);
+      const dbProduct = productMap.get(pId);
+
+      if (!dbProduct) {
+        return res.status(404).json({
+          success: false,
+          message: "Product not found or has been removed from catalog",
+        });
+      }
+
+      if (dbProduct.isAvailable === false) {
+        return res.status(400).json({
+          success: false,
+          message: `"${dbProduct.name}" is currently unavailable for purchase`,
+        });
+      }
+
+      const requestedQty = Math.max(1, Math.floor(Number(item.quantity) || 1));
+
+      if (dbProduct.stock < requestedQty) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for "${dbProduct.name}". Only ${dbProduct.stock} left in stock.`,
+        });
+      }
+
+      const itemTotal = Number(dbProduct.price) * requestedQty;
+      calculatedSubtotal += itemTotal;
+
+      verifiedItems.push({
+        product: dbProduct._id,
+        name: dbProduct.name,
+        price: dbProduct.price,
+        quantity: requestedQty,
+        image: dbProduct.images?.[0]?.url || item.image || "",
+      });
+
+      // Update product stock
+      dbProduct.stock = Math.max(0, dbProduct.stock - requestedQty);
+      if (dbProduct.stock === 0) {
+        dbProduct.isAvailable = false;
+      }
+      await dbProduct.save();
+    }
+
+    const shippingAmount = 100;
+    const finalAmount = calculatedSubtotal + shippingAmount;
+    const upiRef = utr && typeof utr === "string" ? utr.trim() : "";
+
+    const order = await Order.create({
+      customer: {
+        name: customer.name.trim(),
+        email: customer.email ? customer.email.trim().toLowerCase() : "order@madhubanipalette.com",
+        phone: customer.phone.trim(),
+        address: customer.address.trim(),
+      },
+      items: verifiedItems,
+      subtotalAmount: calculatedSubtotal,
+      shippingAmount,
+      totalAmount: finalAmount,
+      paymentMethod: "UPI",
+      paymentGateway: "UPI",
+      paymentStatus: "Awaiting Verification",
+      orderStatus: "Confirmed",
+      paymentOrderId: `upi_${Date.now()}`,
+      paymentId: upiRef || "UPI_PENDING_VERIFICATION",
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Order placed successfully! Please share payment screenshot on WhatsApp.",
+      orderId: order._id,
+      order,
+    });
+  } catch (error) {
+    console.error("UPI order error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to place UPI order",
+      error: error.message,
+    });
+  }
+});
+
+/**
  * POST /api/payment/verify
  * Cryptographically verifies Razorpay payment signature on the backend.
  * Uses HMAC-SHA256 and constant-time comparison to prevent timing attacks.

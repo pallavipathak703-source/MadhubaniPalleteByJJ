@@ -11,7 +11,8 @@ const orderSchema = new mongoose.Schema(
 
       email: {
         type: String,
-        required: true,
+        required: false,
+        default: "",
         trim: true,
         lowercase: true,
       },
@@ -70,7 +71,7 @@ const orderSchema = new mongoose.Schema(
 
     paymentStatus: {
       type: String,
-      enum: ["Pending", "Paid", "Failed", "Refunded"],
+      enum: ["Pending", "Paid", "Failed", "Refunded", "Awaiting Verification"],
       default: "Pending",
     },
 
@@ -89,14 +90,14 @@ const orderSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: ["COD", "Online"],
-      default: "Online",
+      enum: ["COD", "Online", "UPI"],
+      default: "UPI",
     },
 
     paymentGateway: {
       type: String,
-      enum: ["Razorpay", "COD", "Manual"],
-      default: "Razorpay",
+      enum: ["Razorpay", "COD", "Manual", "UPI"],
+      default: "UPI",
     },
 
     paymentOrderId: {

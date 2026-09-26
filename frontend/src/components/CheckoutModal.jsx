@@ -1,9 +1,13 @@
 import { memo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import QRCode from "qrcode";
 import { useCart } from "../context/CartContext";
-import { loadRazorpaySDK } from "../utils/razorpay";
 import { API_URL } from "../config/api";
+
 const SHIPPING_CHARGE = 100;
+const UPI_ID = "sjha63004@okhdfcbank";
+const UPI_NAME = "shivani Jha";
+const WHATSAPP_NUMBER = "917045768778";
 
 function CheckoutModalComponent() {
   const {
@@ -16,20 +20,42 @@ function CheckoutModalComponent() {
     clearCart,
   } = useCart();
 
+  const [step, setStep] = useState("details"); // 'details' | 'payment' | 'success'
   const [customer, setCustomer] = useState({
     name: "",
     email: "",
     phone: "",
     address: "",
   });
-
+  const [utr, setUtr] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState("");
   const [orderLoading, setOrderLoading] = useState(false);
   const [orderMessage, setOrderMessage] = useState("");
-  const [orderSuccess, setOrderSuccess] = useState(false);
-  const [paymentCancelled, setPaymentCancelled] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState(null);
 
   const grandTotal = cartTotal + SHIPPING_CHARGE;
+
+  // Build the universal UPI payment URI
+  const upiUri = `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(
+    UPI_NAME
+  )}&am=${grandTotal}&cu=INR&tn=${encodeURIComponent("Madhubani Palette Order")}`;
+
+  // Generate dynamic QR code when stepping to payment
+  useEffect(() => {
+    if (step === "payment" && grandTotal > 0) {
+      QRCode.toDataURL(upiUri, {
+        width: 320,
+        margin: 1,
+        color: {
+          dark: "#0f172a",
+          light: "#ffffff",
+        },
+      })
+        .then((url) => setQrDataUrl(url))
+        .catch((err) => console.error("QR Generation error:", err));
+    }
+  }, [step, grandTotal, upiUri]);
 
   // Self-contained body scroll lock and Escape key handling
   useEffect(() => {
@@ -52,6 +78,18 @@ function CheckoutModalComponent() {
     };
   }, [showCheckout, closeCheckout, orderLoading]);
 
+  // Reset modal state when closed
+  const handleModalClose = () => {
+    if (orderLoading) return;
+    closeCheckout();
+    setTimeout(() => {
+      setStep("details");
+      setOrderMessage("");
+      setUtr("");
+      setCopied(false);
+    }, 300);
+  };
+
   if (!showCheckout) return null;
 
   const handleCustomerChange = (event) => {
@@ -62,31 +100,76 @@ function CheckoutModalComponent() {
     }));
   };
 
-  const handlePlaceOrder = async (event) => {
+  // Step 1 Validation -> Proceed to UPI QR Screen
+  const handleProceedToPayment = (event) => {
     event.preventDefault();
 
     if (cart.length === 0) {
       setOrderMessage("Please add products to your bag first.");
       return;
     }
-
-    // Basic validation
     if (!customer.name.trim()) {
       setOrderMessage("Please enter your full name.");
       return;
     }
-    if (!customer.email.trim() || !customer.email.includes("@")) {
-      setOrderMessage("Please provide a valid email address.");
-      return;
-    }
-    if (!customer.phone.trim() || customer.phone.replace(/\D/g, "").length < 10) {
-      setOrderMessage("Please provide a valid 10-digit phone number.");
+    const cleanPhone = customer.phone.replace(/\D/g, "");
+    if (!cleanPhone || cleanPhone.length < 10) {
+      setOrderMessage("Please provide a valid 10-digit mobile number.");
       return;
     }
     if (!customer.address.trim() || customer.address.trim().length < 8) {
-      setOrderMessage("Please provide your complete shipping address with postal pincode.");
+      setOrderMessage("Please provide complete delivery address with postal pincode.");
       return;
     }
+
+    setOrderMessage("");
+    setStep("payment");
+  };
+
+  // Copy UPI ID helper
+  const handleCopyUpi = () => {
+    navigator.clipboard?.writeText(UPI_ID);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  // WhatsApp Order Confirmation Helper
+  const getWhatsAppMessage = (orderId) => {
+    const orderNum = orderId ? `#${orderId.slice(-8).toUpperCase()}` : "";
+    const itemsList = cart
+      .map(
+        (item) =>
+          `• ${item.name} x ${item.quantity || 1} (₹${(
+            Number(item.price || 0) * Number(item.quantity || 1)
+          ).toLocaleString("en-IN")})`
+      )
+      .join("\n");
+
+    return `*NAMASTE MADHUBANI PALETTE!* 🙏
+I have placed an order through your website:
+
+*Order Details:* ${orderNum}
+*Customer Name:* ${customer.name}
+*Phone Number:* ${customer.phone}
+*Delivery Address:* ${customer.address}
+
+*Ordered Items:*
+${itemsList}
+
+*Subtotal:* ₹${cartTotal.toLocaleString("en-IN")}
+*Shipping:* ₹${SHIPPING_CHARGE}
+*Total Paid:* ₹${grandTotal.toLocaleString("en-IN")}
+
+*Payment Method:* Direct UPI
+*Paid To:* ${UPI_NAME} (${UPI_ID})
+${utr ? `*UPI Ref / UTR:* ${utr}\n` : ""}
+I am attaching the payment screenshot below. Please confirm my order dispatch! ✨`;
+  };
+
+  // Step 2 Submission -> Place UPI Order in DB & Open WhatsApp
+  const handleConfirmUpiOrder = async (openWhatsApp = true) => {
+    setOrderLoading(true);
+    setOrderMessage("");
 
     const payloadItems = cart.map((item) => ({
       product: item.productId || item._id,
@@ -96,153 +179,48 @@ function CheckoutModalComponent() {
       image: item.image || "",
     }));
 
-    const invalidItem = payloadItems.find((item) => !item.product);
-    if (invalidItem) {
-      setOrderMessage("Invalid product in bag. Please remove and re-add.");
-      return;
-    }
-
-    setOrderLoading(true);
-    setOrderMessage("");
-    setPaymentCancelled(false);
-    setOrderSuccess(false);
-
     try {
-      /* =========================================================
-         ONLINE PAYMENT FLOW ONLY (RAZORPAY)
-      ========================================================= */
-      // Step 1: Create server-side order with database-verified amounts (Subtotal + ₹100 Shipping)
-      const initResponse = await fetch(`${API_URL}/payment/create-order`, {
+      const response = await fetch(`${API_URL}/payment/upi-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customer,
+          customer: {
+            name: customer.name.trim(),
+            email: customer.email.trim() || `${customer.phone}@madhubanipalette.com`,
+            phone: customer.phone.trim(),
+            address: customer.address.trim(),
+          },
           items: payloadItems,
+          utr: utr.trim(),
         }),
       });
 
-      const initData = await initResponse.json();
+      const data = await response.json();
 
-      if (!initResponse.ok || !initData.success) {
-        throw new Error(initData.message || "Failed to initialize payment gateway order.");
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to register order with the server.");
       }
 
-      // Step 2: Load Razorpay Checkout SDK
-      const isSdkLoaded = await loadRazorpaySDK();
+      setConfirmedOrder(data.order);
+      setStep("success");
+      clearCart();
 
-      // If Razorpay SDK is available, open the standard Razorpay checkout modal
-      if (isSdkLoaded && window.Razorpay) {
-        const razorpayOptions = {
-          key: initData.keyId,
-          amount: initData.amount,
-          currency: initData.currency || "INR",
-          name: "Madhubani Palette by JJ",
-          description: `Handcrafted order (${cartCount} ${cartCount === 1 ? "item" : "items"})`,
-          order_id: initData.paymentOrderId,
-          prefill: {
-            name: customer.name,
-            email: customer.email,
-            contact: customer.phone,
-          },
-          theme: {
-            color: "#8a2b2b", // Mithila terracotta accent
-          },
-          modal: {
-            escape: true,
-            backdropclose: false,
-            ondismiss: () => {
-              setOrderLoading(false);
-              setPaymentCancelled(true);
-              setOrderMessage("Payment was cancelled. Your shopping bag is still safe.");
-            },
-          },
-          handler: async (response) => {
-            setOrderLoading(true);
-            setOrderMessage("Verifying payment security signature with bank...");
-
-            try {
-              // Step 3: Backend signature verification (NEVER trust frontend alone)
-              const verifyResponse = await fetch(`${API_URL}/payment/verify`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  orderId: initData.orderId,
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                }),
-              });
-
-              const verifyData = await verifyResponse.json();
-
-              if (!verifyResponse.ok || !verifyData.success) {
-                throw new Error(verifyData.message || "Payment verification failed on the server.");
-              }
-
-              // Payment verified successfully: update UI and clear cart ONLY now
-              setOrderSuccess(true);
-              setConfirmedOrder(verifyData.order);
-              setOrderMessage(
-                `Payment of ₹${(initData.summary?.total || grandTotal).toLocaleString("en-IN")} confirmed! Order #${(verifyData.order?._id || initData.orderId).slice(-6).toUpperCase()}`
-              );
-              clearCart();
-            } catch (verifyError) {
-              console.error("Verification error:", verifyError);
-              setOrderMessage(verifyError.message || "Failed to verify payment with server.");
-            } finally {
-              setOrderLoading(false);
-            }
-          },
-        };
-
-        const razorpayInstance = new window.Razorpay(razorpayOptions);
-
-        razorpayInstance.on("payment.failed", (failureResponse) => {
-          setOrderLoading(false);
-          console.error("Payment failed at gateway:", failureResponse);
-          setOrderMessage(
-            failureResponse.error?.description ||
-              "Payment could not be completed by your bank. Please try again."
-          );
-        });
-
-        razorpayInstance.open();
-      } else {
-        // Fallback simulation for automated test / sandbox environments
-        const verifyResponse = await fetch(`${API_URL}/payment/verify`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            orderId: initData.orderId,
-            razorpay_order_id: initData.paymentOrderId,
-            razorpay_payment_id: `pay_sim_${Date.now()}`,
-            razorpay_signature: "sandbox_simulated_signature",
-          }),
-        });
-
-        const verifyData = await verifyResponse.json();
-
-        if (!verifyResponse.ok || !verifyData.success) {
-          throw new Error(verifyData.message || "Payment verification failed.");
-        }
-
-        setOrderSuccess(true);
-        setConfirmedOrder(verifyData.order);
-        setOrderMessage(
-          `Order #${(verifyData.order?._id || initData.orderId).slice(-6).toUpperCase()} confirmed successfully!`
-        );
-        clearCart();
-        setOrderLoading(false);
+      // Open WhatsApp chat with prefilled message
+      if (openWhatsApp) {
+        const waText = getWhatsAppMessage(data.order?._id || data.orderId);
+        const waUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(waText)}`;
+        window.open(waUrl, "_blank");
       }
-    } catch (orderError) {
-      console.error("Order error:", orderError);
-      setOrderMessage(orderError.message || "Something went wrong while processing your order.");
+    } catch (err) {
+      console.error("Order placement error:", err);
+      setOrderMessage(err.message || "Something went wrong while placing your order. Please try again.");
+    } finally {
       setOrderLoading(false);
     }
   };
 
   const modalContent = (
-    <div className="product-modal-overlay" onClick={() => !orderLoading && closeCheckout()}>
+    <div className="product-modal-overlay" onClick={handleModalClose}>
       <div
         className="checkout-modal"
         onClick={(event) => event.stopPropagation()}
@@ -252,14 +230,17 @@ function CheckoutModalComponent() {
         <button
           className="modal-close"
           type="button"
-          onClick={closeCheckout}
+          onClick={handleModalClose}
           disabled={orderLoading}
           aria-label="Close Checkout"
         >
           ×
         </button>
 
-        {!orderSuccess ? (
+        {/* =========================================================
+            STEP 1: CUSTOMER & DELIVERY DETAILS
+        ========================================================= */}
+        {step === "details" && (
           <>
             <div className="checkout-top-nav">
               <button
@@ -273,27 +254,16 @@ function CheckoutModalComponent() {
               >
                 ← Edit Bag ({cartCount})
               </button>
-              <p className="small-heading">• SECURE CHECKOUT</p>
+              <p className="small-heading">• STEP 1 OF 2: DELIVERY</p>
             </div>
 
-            <h2>Complete Your Order</h2>
-
-            {/* CANCELLATION NOTICE */}
-            {paymentCancelled && (
-              <div className="payment-cancel-banner" role="alert">
-                <span className="cancel-icon">ℹ</span>
-                <div>
-                  <strong>Payment was cancelled</strong>
-                  <p>Your bag items are safe and preserved. You can try again whenever you're ready.</p>
-                </div>
-              </div>
-            )}
+            <h2>Shipping Details</h2>
 
             {/* ORDER SUMMARY */}
             <div className="checkout-summary">
               <div className="summary-title-row">
                 <span className="summary-title">Order Items ({cartCount})</span>
-                <span className="summary-secure-badge">🛡️ 256-bit Encrypted</span>
+                <span className="summary-secure-badge">🛡️ Direct UPI Payment</span>
               </div>
 
               <div className="checkout-items-list">
@@ -338,23 +308,23 @@ function CheckoutModalComponent() {
                   <span>₹{cartTotal.toLocaleString("en-IN")}</span>
                 </div>
                 <div className="breakdown-row">
-                  <span>Shipping / Package Charge</span>
+                  <span>Insured Delivery Charge</span>
                   <span>₹{SHIPPING_CHARGE.toLocaleString("en-IN")}</span>
                 </div>
                 <div className="checkout-total">
-                  <span>Grand Total</span>
+                  <span>Total Payable</span>
                   <strong>₹{grandTotal.toLocaleString("en-IN")}</strong>
                 </div>
               </div>
             </div>
 
-            {/* CUSTOMER & PAYMENT FORM */}
-            <form className="checkout-form" onSubmit={handlePlaceOrder}>
-              <h3 className="section-title">1. Delivery Address</h3>
+            {/* CUSTOMER FORM */}
+            <form className="checkout-form" onSubmit={handleProceedToPayment}>
+              <h3 className="section-title">Recipient Information</h3>
 
               <div className="form-grid">
                 <label>
-                  <span>Full Name</span>
+                  <span>Full Name *</span>
                   <input
                     type="text"
                     name="name"
@@ -367,38 +337,38 @@ function CheckoutModalComponent() {
                 </label>
 
                 <label>
-                  <span>Email Address</span>
-                  <input
-                    type="email"
-                    name="email"
-                    value={customer.email}
-                    onChange={handleCustomerChange}
-                    placeholder="e.g. pallavi@example.com"
-                    required
-                    disabled={orderLoading}
-                  />
-                </label>
-
-                <label>
-                  <span>Phone Number</span>
+                  <span>10-Digit Mobile Number *</span>
                   <input
                     type="tel"
                     name="phone"
                     value={customer.phone}
                     onChange={handleCustomerChange}
-                    placeholder="10-digit mobile number"
+                    placeholder="e.g. 9876543210"
                     required
+                    maxLength="10"
                     disabled={orderLoading}
                   />
                 </label>
 
                 <label className="full-width">
-                  <span>Complete Delivery Address with Pincode</span>
+                  <span>Email Address (Optional)</span>
+                  <input
+                    type="email"
+                    name="email"
+                    value={customer.email}
+                    onChange={handleCustomerChange}
+                    placeholder="e.g. pallavi@example.com (for order receipts)"
+                    disabled={orderLoading}
+                  />
+                </label>
+
+                <label className="full-width">
+                  <span>Complete Delivery Address & Pincode *</span>
                   <textarea
                     name="address"
                     value={customer.address}
                     onChange={handleCustomerChange}
-                    placeholder="House/Flat No., Street, Landmark, City, State & Pincode"
+                    placeholder="House / Flat No., Building, Street, Landmark, City, State & Pincode"
                     rows="3"
                     required
                     disabled={orderLoading}
@@ -406,117 +376,255 @@ function CheckoutModalComponent() {
                 </label>
               </div>
 
-              {/* PAYMENT METHOD SECTION (ONLINE PAYMENT ONLY) */}
-              <div className="payment-selection-section">
-                <h3 className="section-title">2. Payment Method</h3>
-
-                <div className="payment-option-card selected">
-                  <div className="payment-option-content">
-                    <div className="payment-option-header">
-                      <strong>Online Payment</strong>
-                      <span className="gateway-badge">Razorpay Secure</span>
-                    </div>
-                    <p className="payment-methods-supported">
-                      Instant & secure checkout via UPI (Google Pay, PhonePe, Paytm), Credit / Debit Cards, Net Banking & Wallets
-                    </p>
-                    <div className="payment-method-icons">
-                      <span className="pay-chip">UPI</span>
-                      <span className="pay-chip">Cards</span>
-                      <span className="pay-chip">NetBanking</span>
-                      <span className="pay-chip">Wallets</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* ERROR / STATUS MESSAGE */}
-              {orderMessage && !orderSuccess && (
-                <div
-                  className={`checkout-message ${
-                    paymentCancelled ? "cancelled" : "error"
-                  }`}
-                  role="alert"
-                >
+              {orderMessage && (
+                <div className="checkout-message error" role="alert">
                   <p>{orderMessage}</p>
                 </div>
               )}
 
-              {/* SUBMIT BUTTON */}
               <button
                 type="submit"
                 className="modal-order-button"
                 disabled={orderLoading || cart.length === 0}
               >
-                {orderLoading
-                  ? "Connecting to Secure Gateway..."
-                  : `Pay ₹${grandTotal.toLocaleString("en-IN")} • Razorpay`}
+                Proceed to UPI Payment (₹{grandTotal.toLocaleString("en-IN")}) →
               </button>
 
               <p className="checkout-trust-notice">
-                🔒 100% Authentic Handcrafted Art • Insured Delivery • Verified Gateway Protection
+                🔒 100% Authentic Madhubani Art • Direct Artist Payment • Insured Express Dispatch
               </p>
             </form>
           </>
-        ) : (
-          /* =========================================================
-             ORDER CONFIRMATION VIEW
-          ========================================================= */
+        )}
+
+        {/* =========================================================
+            STEP 2: UPI SCANNER & PAYMENT VIEW
+        ========================================================= */}
+        {step === "payment" && (
+          <div className="upi-step-container">
+            <div className="checkout-top-nav">
+              <button
+                type="button"
+                className="back-to-bag-button"
+                disabled={orderLoading}
+                onClick={() => setStep("details")}
+              >
+                ← Back to Address
+              </button>
+              <p className="small-heading">• STEP 2 OF 2: SCAN & PAY</p>
+            </div>
+
+            <div className="upi-header-banner">
+              <h2>Scan & Pay with Any UPI App</h2>
+              <div className="payable-amount-pill">
+                Payable: <strong>₹{grandTotal.toLocaleString("en-IN")}</strong>
+              </div>
+            </div>
+
+            {/* GOOGLE PAY STYLE SCANNER CARD */}
+            <div className="gpay-card">
+              <div className="gpay-card-header">
+                <div className="gpay-avatar">s</div>
+                <div className="gpay-user-info">
+                  <strong>{UPI_NAME}</strong>
+                  <span>Verified Merchant / Artist</span>
+                </div>
+              </div>
+
+              {/* QR BOX WITH CENTER BADGE */}
+              <div className="gpay-qr-box">
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt={`Scan to pay ${UPI_NAME} ₹${grandTotal}`}
+                    className="gpay-qr-img"
+                  />
+                ) : (
+                  <div className="qr-skeleton">Generating Scanner...</div>
+                )}
+                <div className="gpay-center-logo" title="Google Pay / UPI Verified">
+                  <svg viewBox="0 0 24 24" width="22" height="22">
+                    <path
+                      fill="#4285F4"
+                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.25 21.36 7.32 24 12 24z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.16 0 9.94 0 12s.46 3.84 1.26 5.42l4.02-3.15z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.32 0 3.25 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              {/* UPI ID ROW */}
+              <div className="gpay-upi-id-row">
+                <div className="upi-id-text">
+                  <span className="upi-label">UPI ID:</span>
+                  <code className="upi-code">{UPI_ID}</code>
+                </div>
+                <button
+                  type="button"
+                  className="copy-upi-btn"
+                  onClick={handleCopyUpi}
+                  aria-label="Copy UPI ID"
+                >
+                  {copied ? "Copied! ✓" : "Copy"}
+                </button>
+              </div>
+
+              <p className="gpay-scan-tagline">Scan to pay with any UPI app</p>
+
+              {/* SUPPORTED APPS */}
+              <div className="upi-app-badges">
+                <span className="upi-chip">Google Pay</span>
+                <span className="upi-chip">PhonePe</span>
+                <span className="upi-chip">Paytm</span>
+                <span className="upi-chip">BHIM UPI</span>
+                <span className="upi-chip">Cred</span>
+              </div>
+            </div>
+
+            {/* MOBILE QUICK OPEN BUTTON */}
+            <a href={upiUri} className="mobile-upi-btn" rel="noreferrer">
+              <span>⚡</span> Open in UPI App (GPay / PhonePe / Paytm)
+            </a>
+
+            {/* UTR / REFERENCE NUMBER (OPTIONAL) */}
+            <div className="utr-input-group">
+              <label htmlFor="utr-input">
+                <span>Enter 12-Digit UPI Reference / UTR No. (Optional):</span>
+              </label>
+              <input
+                id="utr-input"
+                type="text"
+                value={utr}
+                onChange={(e) => setUtr(e.target.value)}
+                placeholder="e.g. 427819402812"
+                maxLength="20"
+                disabled={orderLoading}
+              />
+              <small>You will see this 12-digit number in your UPI app receipt after payment.</small>
+            </div>
+
+            {orderMessage && (
+              <div className="checkout-message error" role="alert">
+                <p>{orderMessage}</p>
+              </div>
+            )}
+
+            {/* CONFIRM VIA WHATSAPP BUTTON */}
+            <button
+              type="button"
+              className="whatsapp-order-btn"
+              onClick={() => handleConfirmUpiOrder(true)}
+              disabled={orderLoading}
+            >
+              {orderLoading ? (
+                "Processing Order..."
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                    <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2zm5.79 14.07c-.24.68-1.2 1.27-1.8 1.32-.47.04-1.07.06-3.48-.93-2.64-1.09-4.33-3.8-4.46-3.98-.13-.18-1.07-1.42-1.07-2.72 0-1.29.67-1.93.91-2.19.24-.26.53-.32.7-.32.18 0 .36 0 .52.01.17.01.4.06.61.57.24.58.82 2 .89 2.15.07.15.12.33.02.53-.1.2-.15.32-.3.5-.15.17-.32.39-.46.52-.15.15-.31.32-.13.63.18.31.79 1.31 1.7 2.12 1.17 1.04 2.16 1.36 2.47 1.51.31.15.49.13.67-.08.18-.21.78-.91.99-1.22.21-.31.42-.26.7-.16.29.1 1.83.86 2.14 1.02.31.15.52.23.6.36.08.13.08.77-.16 1.45z" />
+                  </svg>
+                  Confirm Order & Send on WhatsApp
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className="confirm-website-btn"
+              onClick={() => handleConfirmUpiOrder(false)}
+              disabled={orderLoading}
+            >
+              Confirm on Website (Without WhatsApp)
+            </button>
+          </div>
+        )}
+
+        {/* =========================================================
+            STEP 3: ORDER SUCCESS CONFIRMATION
+        ========================================================= */}
+        {step === "success" && (
           <div className="order-success">
             <div className="success-icon">✓</div>
             <p className="small-heading">• ORDER CONFIRMED</p>
-            <h2>Dhanyavaad!</h2>
+            <h2>Dhanyavaad, {customer.name}!</h2>
             <p className="success-subheading">
-              Your handmade Madhubani piece has been received with love. Janvi will package and ship it thoughtfully.
+              Your handmade Madhubani piece order has been received. Our team will verify the payment and prepare it with sacred craftsmanship.
             </p>
 
             <div className="confirmed-order-card">
               <div className="confirmed-order-row">
                 <span>Order ID:</span>
-                <strong>#{confirmedOrder?._id?.slice(-8).toUpperCase() || "ORD-SUCCESS"}</strong>
+                <strong>
+                  #{confirmedOrder?._id?.slice(-8).toUpperCase() || "ORD-SUCCESS"}
+                </strong>
               </div>
               <div className="confirmed-order-row">
                 <span>Payment Method:</span>
-                <strong>Online (Razorpay)</strong>
+                <strong>Direct UPI (sjha63004@okhdfcbank)</strong>
               </div>
               <div className="confirmed-order-row">
                 <span>Payment Status:</span>
-                <span className={`badge-payment ${confirmedOrder?.paymentStatus?.toLowerCase() || "paid"}`}>
-                  {confirmedOrder?.paymentStatus?.toUpperCase() || "PAID"}
-                </span>
+                <span className="badge-payment pending">AWAITING VERIFICATION</span>
               </div>
-              {confirmedOrder?.paymentId && (
+              {confirmedOrder?.paymentId && confirmedOrder.paymentId !== "UPI_PENDING_VERIFICATION" && (
                 <div className="confirmed-order-row">
-                  <span>Transaction ID:</span>
+                  <span>UPI Reference / UTR:</span>
                   <code className="mono-badge">{confirmedOrder.paymentId}</code>
                 </div>
               )}
               <div className="confirmed-order-row">
-                <span>Subtotal:</span>
-                <span>₹{(confirmedOrder?.subtotalAmount || cartTotal).toLocaleString("en-IN")}</span>
+                <span>Recipient:</span>
+                <strong>{customer.name} ({customer.phone})</strong>
               </div>
               <div className="confirmed-order-row">
-                <span>Shipping / Package Charge:</span>
-                <span>₹{(confirmedOrder?.shippingAmount ?? SHIPPING_CHARGE).toLocaleString("en-IN")}</span>
+                <span>Delivery Address:</span>
+                <span className="address-snippet">{customer.address}</span>
               </div>
               <div className="confirmed-order-row total">
-                <span>Amount Paid:</span>
-                <strong>₹{(confirmedOrder?.totalAmount || grandTotal).toLocaleString("en-IN")}</strong>
+                <span>Total Amount:</span>
+                <strong>₹{grandTotal.toLocaleString("en-IN")}</strong>
               </div>
             </div>
 
-            <p className="order-dispatch-note">
-              We have dispatched order confirmation details to <strong>{customer.email || confirmedOrder?.customer?.email}</strong>.
-            </p>
+            <div className="whatsapp-prompt-box">
+              <p>
+                <strong>📱 Important:</strong> Please send your payment screenshot on WhatsApp to <strong>+91 70457 68778</strong> for instant order dispatch.
+              </p>
+              <button
+                type="button"
+                className="whatsapp-order-btn"
+                onClick={() => {
+                  const waText = getWhatsAppMessage(confirmedOrder?._id);
+                  const waUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+                    waText
+                  )}`;
+                  window.open(waUrl, "_blank");
+                }}
+              >
+                Open WhatsApp Chat Now
+              </button>
+            </div>
 
             <button
               type="button"
               className="modal-order-button"
               onClick={() => {
                 closeCheckout();
-                setOrderSuccess(false);
+                setStep("details");
                 setConfirmedOrder(null);
                 setOrderMessage("");
-                setPaymentCancelled(false);
+                setUtr("");
                 setCustomer({ name: "", email: "", phone: "", address: "" });
               }}
             >
