@@ -99,7 +99,7 @@ router.post("/login", async (req, res) => {
         email: admin.email,
         role: admin.role,
       },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || "your_super_secret_key_change_this",
       {
         expiresIn: "7d",
       }

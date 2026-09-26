@@ -13,7 +13,8 @@ const auth = (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const jwtSecret = process.env.JWT_SECRET || "your_super_secret_key_change_this";
+    const decoded = jwt.verify(token, jwtSecret);
 
     if (decoded.role !== "admin") {
       return res.status(403).json({
