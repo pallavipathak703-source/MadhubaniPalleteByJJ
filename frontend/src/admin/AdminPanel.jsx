@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import logo from "../assets/logo.jpg";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+import { API_URL } from "../config/api";
 
 const ADMIN_TOKEN_KEY = "madhubani_admin_token";
 const ADMIN_USER_KEY = "madhubani_admin_user";

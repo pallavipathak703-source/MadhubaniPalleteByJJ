@@ -61,7 +61,7 @@ Backend variables:
 
 Frontend variables:
 
-- `VITE_API_URL`: backend API base URL, default `http://localhost:5000/api`
+- `VITE_API_URL`: backend API base URL, default `https://madhubani-pallete-backend.onrender.com`
 
 ## Run the Project
 From Windows Explorer, double-click `launch.bat` to open the backend and frontend in separate development windows.

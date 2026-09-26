@@ -32,8 +32,7 @@ import {
   EditProduct,
   ProtectedAdminRoute,
 } from "./admin/AdminPanel";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+import { API_URL } from "./config/api";
 
 // In-memory cache for products so returning to home never refetches or flickers
 let cachedProducts = null;

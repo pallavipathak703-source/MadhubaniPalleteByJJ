@@ -2,8 +2,7 @@ import { memo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCart } from "../context/CartContext";
 import { loadRazorpaySDK } from "../utils/razorpay";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+import { API_URL } from "../config/api";
 const SHIPPING_CHARGE = 100;
 
 function CheckoutModalComponent() {
