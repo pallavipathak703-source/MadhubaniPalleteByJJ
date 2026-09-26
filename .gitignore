@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Environment files
+frontend/.env
+frontend/.env.production
+frontend/.env.local
+frontend/.env.*.local
+!frontend/.env.example
+backend/.env
+backend/.env.local
+backend/.env.*.local
+!backend/.env.example
+
+# Build outputs
+frontend/dist/
+frontend/dist-ssr/
+
+# Logs
+*.log
