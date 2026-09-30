@@ -2472,6 +2472,7 @@ function ProductForm({ mode }) {
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
 
   useEffect(() => {
     if (mode !== "edit" || !id) return;
@@ -2526,8 +2527,25 @@ function ProductForm({ mode }) {
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        setMessage("Selected file is larger than 10MB. Please select a smaller image.");
+        return;
+      }
       setSelectedFile(file);
+      setImageUrl("");
       setPreviewUrl(URL.createObjectURL(file));
+      setMessage("");
+    }
+  };
+
+  const handleImageUrlChange = (e) => {
+    const url = e.target.value;
+    setImageUrl(url);
+    if (url.trim()) {
+      setSelectedFile(null);
+      setPreviewUrl(url.trim());
+    } else if (!selectedFile) {
+      setPreviewUrl("");
     }
   };
 
@@ -2537,20 +2555,37 @@ function ProductForm({ mode }) {
     setMessage("");
 
     try {
+      const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+      if (!token) {
+        throw new Error("Admin session expired. Please log in again to add products.");
+      }
+
+      if (!form.name.trim()) {
+        throw new Error("Product title is required.");
+      }
+      if (!form.description.trim()) {
+        throw new Error("Product description is required.");
+      }
+      if (form.price === "" || isNaN(Number(form.price)) || Number(form.price) < 0) {
+        throw new Error("Please enter a valid price.");
+      }
+
       const payload = new FormData();
-      payload.append("name", form.name);
-      payload.append("description", form.description);
+      payload.append("name", form.name.trim());
+      payload.append("description", form.description.trim());
       payload.append("price", String(form.price));
       payload.append("priceType", form.priceType);
       payload.append("category", form.category);
-      payload.append("artist", form.artist);
-      payload.append("stock", String(form.stock));
+      payload.append("artist", form.artist.trim() || "Janvi Jha");
+      payload.append("stock", String(form.stock || 1));
       payload.append("tags", form.tags);
       payload.append("featured", String(Boolean(form.featured)));
       payload.append("isAvailable", String(Boolean(form.isAvailable)));
 
       if (selectedFile) {
         payload.append("image", selectedFile);
+      } else if (imageUrl.trim()) {
+        payload.append("image", imageUrl.trim());
       }
 
       const url = mode === "edit" ? `${API_URL}/products/${id}` : `${API_URL}/products`;
@@ -2558,7 +2593,7 @@ function ProductForm({ mode }) {
       const response = await fetch(url, {
         method: mode === "edit" ? "PUT" : "POST",
         headers: {
-          Authorization: `Bearer ${localStorage.getItem(ADMIN_TOKEN_KEY) || ""}`,
+          Authorization: `Bearer ${token}`,
         },
         body: payload,
       });
@@ -2566,7 +2601,8 @@ function ProductForm({ mode }) {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Failed to save product.");
+        const detail = data.error ? `: ${data.error}` : "";
+        throw new Error((data.message || "Failed to save product.") + detail);
       }
 
       navigate("/admin");
@@ -2729,24 +2765,35 @@ function ProductForm({ mode }) {
 
             {/* Image Upload */}
             <div className="form-group full-width">
-              <label>Artwork Image {mode === "create" ? "*" : "(Optional to update)"}</label>
+              <label>Artwork Image {mode === "create" ? "(Upload file or enter Image URL)" : "(Optional to update)"}</label>
               <div className="image-upload-box">
                 {previewUrl && (
                   <div className="image-preview-wrap">
                     <img src={previewUrl} alt="Product preview" className="image-preview" />
                   </div>
                 )}
-                <div className="upload-btn-wrap">
+                <div className="upload-btn-wrap" style={{ display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-start", width: "100%" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      id="product-image-input"
+                      className="file-input-hidden"
+                    />
+                    <label htmlFor="product-image-input" className="admin-outline-btn">
+                      📷 {selectedFile ? selectedFile.name : (previewUrl ? "Change Photo File" : "Upload High-Res Photo")}
+                    </label>
+                    <span style={{ color: "#777", fontSize: "0.85rem" }}>— OR paste Direct Image Link below —</span>
+                  </div>
                   <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    id="product-image-input"
-                    className="file-input-hidden"
+                    type="url"
+                    placeholder="https://images.unsplash.com/... or Cloudinary URL"
+                    value={imageUrl}
+                    onChange={handleImageUrlChange}
+                    className="admin-input"
+                    style={{ width: "100%", maxWidth: "500px" }}
                   />
-                  <label htmlFor="product-image-input" className="admin-outline-btn">
-                    📷 {previewUrl ? "Change Artwork Image" : "Upload High-Res Photo"}
-                  </label>
                   <small className="file-hint">JPG, PNG, WebP up to 10MB supported</small>
                 </div>
               </div>

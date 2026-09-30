@@ -60,29 +60,54 @@ router.post("/", auth, upload.single("image"), async (req, res) => {
     }
 
     // ==========================================
-    // UPLOAD IMAGE TO CLOUDINARY
+    // UPLOAD IMAGE TO CLOUDINARY OR ACCEPT IMAGE URL
     // ==========================================
     if (req.file) {
-      const result = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: "madhubani-palette/products",
-          },
-          (error, result) => {
-            if (error) {
-              reject(error);
-            } else {
-              resolve(result);
+      try {
+        const result = await new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: "madhubani-palette/products",
+            },
+            (error, result) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve(result);
+              }
             }
-          }
-        );
+          );
 
-        stream.end(req.file.buffer);
-      });
+          stream.end(req.file.buffer);
+        });
 
+        images.push({
+          url: getPublicImageUrl(result),
+          public_id: result.public_id,
+        });
+      } catch (uploadError) {
+        console.error("Cloudinary upload failed:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload product image to Cloudinary",
+          error: uploadError.message,
+        });
+      }
+    } else if (req.body.image) {
+      const imageUrl = String(req.body.image).trim();
+      if (imageUrl) {
+        images.push({
+          url: imageUrl,
+          public_id: "external-image",
+        });
+      }
+    }
+
+    // Default fallback placeholder if no image provided
+    if (images.length === 0) {
       images.push({
-        url: getPublicImageUrl(result),
-        public_id: result.public_id,
+        url: "/images/placeholder-product.jpg",
+        public_id: "placeholder-product",
       });
     }
 
@@ -240,29 +265,38 @@ router.put("/:id", auth, upload.single("image"), async (req, res) => {
       }
 
       // Upload new image
-      const result = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: "madhubani-palette/products",
-          },
-          (error, result) => {
-            if (error) {
-              reject(error);
-            } else {
-              resolve(result);
+      try {
+        const result = await new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: "madhubani-palette/products",
+            },
+            (error, result) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve(result);
+              }
             }
-          }
-        );
+          );
 
-        stream.end(req.file.buffer);
-      });
+          stream.end(req.file.buffer);
+        });
 
-      product.images = [
-        {
-          url: getPublicImageUrl(result),
-          public_id: result.public_id,
-        },
-      ];
+        product.images = [
+          {
+            url: getPublicImageUrl(result),
+            public_id: result.public_id,
+          },
+        ];
+      } catch (uploadError) {
+        console.error("Cloudinary update upload failed:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload new product image to Cloudinary",
+          error: uploadError.message,
+        });
+      }
     } else if (req.body.images !== undefined) {
       try {
         const incomingImages =

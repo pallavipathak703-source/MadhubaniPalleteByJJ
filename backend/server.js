@@ -53,11 +53,31 @@ app.use((req, res) => {
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error("Unhandled error:", err.message || err);
+
+  if (err.name === "MulterError") {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "File too large. Maximum image size is 10MB.",
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      message: `Upload error: ${err.message}`,
+    });
+  }
+
+  if (err.message === "Only image files are allowed") {
+    return res.status(400).json({
+      success: false,
+      message: "Only image files (JPG, PNG, WebP) are allowed.",
+    });
+  }
 
   res.status(500).json({
     success: false,
-    message: "Internal server error",
+    message: err.message || "Internal server error",
   });
 });
 

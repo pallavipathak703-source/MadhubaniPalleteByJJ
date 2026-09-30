@@ -18,13 +18,12 @@ export const getApiBaseUrl = () => {
     .replace(/^["']|["']$/g, "")
     .replace(/\/+$/, "");
 
-  // Guard against unconfigured templates or local dev fallbacks
+  // Guard against unconfigured templates or production localhost leaks
   if (
     !cleanUrl ||
     cleanUrl.includes("<") ||
     cleanUrl.includes(">") ||
-    cleanUrl.includes("localhost") ||
-    cleanUrl.includes("127.0.0.1")
+    (!import.meta.env.DEV && (cleanUrl.includes("localhost") || cleanUrl.includes("127.0.0.1")))
   ) {
     return PRODUCTION_API_BASE_URL;
   }
